@@ -44,15 +44,12 @@ public class MainActivity extends AppCompatActivity {
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 if (device != null && checkBluetoothPermission()) {
-                    String deviceName = device.getName();
-                    // Filter for Sunmi printers
-                    if (deviceName != null && (deviceName.startsWith("NT311") ||
-                        deviceName.contains("CloudPrinter") ||
-                        deviceName.contains("SUNMI"))) {
-                        if (!deviceList.contains(device)) {
-                            deviceList.add(device);
-                            deviceAdapter.notifyDataSetChanged();
-                        }
+                    // Show ALL devices (removed filter to help debugging)
+                    // This allows you to see all Bluetooth devices
+                    if (!deviceList.contains(device)) {
+                        deviceList.add(device);
+                        deviceAdapter.notifyDataSetChanged();
+                        statusText.setText("");
                     }
                 }
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
@@ -62,7 +59,7 @@ public class MainActivity extends AppCompatActivity {
                 if (deviceList.isEmpty()) {
                     statusText.setText(R.string.no_devices_found);
                 } else {
-                    statusText.setText("");
+                    statusText.setText("Found " + deviceList.size() + " device(s)");
                 }
             }
         }
@@ -103,6 +100,11 @@ public class MainActivity extends AppCompatActivity {
         filter.addAction(BluetoothDevice.ACTION_FOUND);
         filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
         registerReceiver(bluetoothReceiver, filter);
+
+        // Request permissions at startup
+        if (!checkPermissions()) {
+            requestPermissions();
+        }
     }
 
     private boolean checkPermissions() {
@@ -159,10 +161,28 @@ public class MainActivity extends AppCompatActivity {
             bluetoothAdapter.cancelDiscovery();
         }
 
+        // First, add already paired devices to the list
+        if (checkBluetoothPermission()) {
+            try {
+                java.util.Set<BluetoothDevice> pairedDevices = bluetoothAdapter.getBondedDevices();
+                if (pairedDevices != null && !pairedDevices.isEmpty()) {
+                    for (BluetoothDevice device : pairedDevices) {
+                        if (!deviceList.contains(device)) {
+                            deviceList.add(device);
+                        }
+                    }
+                    deviceAdapter.notifyDataSetChanged();
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
         scanButton.setEnabled(false);
         scanButton.setText(R.string.scanning);
         progressBar.setVisibility(View.VISIBLE);
 
+        // Then start discovery for new devices
         if (checkBluetoothPermission()) {
             bluetoothAdapter.startDiscovery();
         }
@@ -190,9 +210,9 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
             if (allGranted) {
-                startBluetoothScan();
+                Toast.makeText(this, "Permissions granted! Tap Scan to find printers.", Toast.LENGTH_SHORT).show();
             } else {
-                Toast.makeText(this, R.string.permissions_required, Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.permissions_required, Toast.LENGTH_LONG).show();
             }
         }
     }

@@ -6,6 +6,10 @@
     <string name="no_devices_found">No printers found</string>
     <string name="bluetooth_disabled">Bluetooth is disabled. Please enable it.</string>
     <string name="permissions_required">Permissions are required to scan for devices</string>
+    <string name="instructions_title">How to prepare your Sunmi printer:</string>
+    <string name="instructions_step1">1. Turn ON your Sunmi printer (NT311/CloudPrinter)</string>
+    <string name="instructions_step2">2. Press and hold the power button for 5 seconds until Bluetooth LED blinks</string>
+    <string name="instructions_step3">3. Printer is now discoverable - tap Scan below</string>
     <string name="connect">Connect</string>
     <string name="connecting">Connecting...</string>
     <string name="select_wifi">Select Wi-Fi Network</string>
