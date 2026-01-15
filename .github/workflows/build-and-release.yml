@@ -9,6 +9,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - name: Checkout code
@@ -52,7 +54,7 @@ jobs:
         path: ${{ steps.apk_info.outputs.APK_PATH }}
 
     - name: Create or Update Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ steps.apk_info.outputs.VERSION_NAME }}
         name: Bright Kitchen Printer Connect v${{ steps.apk_info.outputs.VERSION_NAME }}
@@ -74,5 +76,3 @@ jobs:
         files: ${{ steps.apk_info.outputs.APK_PATH }}
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
