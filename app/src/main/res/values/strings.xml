@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sunmi Printer Config</string>
+    <string name="scan_bluetooth">Scan for Printers</string>
+    <string name="scanning">Scanning...</string>
+    <string name="no_devices_found">No printers found</string>
+    <string name="bluetooth_disabled">Bluetooth is disabled. Please enable it.</string>
+    <string name="permissions_required">Permissions are required to scan for devices</string>
+    <string name="connect">Connect</string>
+    <string name="connecting">Connecting...</string>
+    <string name="select_wifi">Select Wi-Fi Network</string>
+    <string name="wifi_password">Wi-Fi Password</string>
+    <string name="configure_printer">Configure Printer</string>
+    <string name="configuring">Configuring...</string>
+    <string name="success">Success! Printer configured.</string>
+    <string name="error">Error: %s</string>
+    <string name="connected_to">Connected to: %s</string>
+</resources>

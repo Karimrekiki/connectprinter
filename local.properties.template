@@ -1,0 +1,9 @@
+## This file must be created by the developer.
+## Copy this file to local.properties and update the sdk.dir path.
+##
+## Location of the Android SDK. Example:
+## For Windows: C:\\Users\\USERNAME\\AppData\\Local\\Android\\Sdk
+## For macOS: /Users/USERNAME/Library/Android/sdk
+## For Linux: /home/USERNAME/Android/Sdk
+
+sdk.dir=/path/to/android/sdk
