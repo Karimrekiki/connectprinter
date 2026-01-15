@@ -47,6 +47,7 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
     private SunmiPrinterClient sunmiPrinterClient;
     private Handler scanTimeoutHandler;
     private Runnable scanTimeoutRunnable;
+    private PrinterDevice selectedDevice;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -166,10 +167,17 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
         Log.d(TAG, "Device clicked: " + device.getName() + " - " + device.getAddress());
         stopScan();
 
-        Intent intent = new Intent(this, WifiConfigActivity.class);
-        intent.putExtra("device_address", device.getAddress());
-        intent.putExtra("device_name", device.getName() != null ? device.getName() : "Unknown");
-        startActivity(intent);
+        // Store selected device
+        selectedDevice = device;
+
+        // Show loading and establish BLE connection first
+        progressBar.setVisibility(View.VISIBLE);
+        statusText.setText("Connecting to printer...");
+
+        // CRITICAL: Call getPrinterSn to establish BLE connection
+        // This MUST be called before any WiFi operations
+        sunmiPrinterClient.getPrinterSn(device.getAddress());
+        Log.d(TAG, "Called getPrinterSn() to establish BLE connection");
     }
 
     // SunmiPrinterClient.IPrinterClient callbacks
@@ -191,16 +199,39 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
     @Override
     public void sendDataFail(int code, String msg) {
         Log.e(TAG, "Send data failed: " + code + " - " + msg);
+
+        runOnUiThread(() -> {
+            progressBar.setVisibility(View.GONE);
+            statusText.setText("Connection failed: " + msg);
+            Toast.makeText(this, "Failed to connect to printer: " + msg, Toast.LENGTH_LONG).show();
+        });
     }
 
     @Override
     public void getSnRequestSuccess() {
-        // Not used in scanning
+        Log.d(TAG, "SN request sent successfully");
     }
 
     @Override
     public void onSnReceived(String sn) {
-        // Not used in scanning
+        // BLE connection established! Now we can proceed to WiFi config
+        Log.d(TAG, "BLE connection established! Printer SN: " + sn);
+
+        runOnUiThread(() -> {
+            progressBar.setVisibility(View.GONE);
+
+            if (selectedDevice != null) {
+                Intent intent = new Intent(this, WifiConfigActivity.class);
+                intent.putExtra("device_address", selectedDevice.getAddress());
+                intent.putExtra("device_name", selectedDevice.getName() != null ? selectedDevice.getName() : "Unknown");
+                intent.putExtra("device_sn", sn);
+                startActivity(intent);
+                Log.d(TAG, "Navigating to WifiConfigActivity with BLE connection established");
+            } else {
+                Log.e(TAG, "selectedDevice is null in onSnReceived!");
+                statusText.setText("Error: Device not selected");
+            }
+        });
     }
 
     @Override
