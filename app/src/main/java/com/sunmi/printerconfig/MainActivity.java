@@ -48,6 +48,9 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
     private Handler scanTimeoutHandler;
     private Runnable scanTimeoutRunnable;
     private PrinterDevice selectedDevice;
+    private Handler connectionTimeoutHandler;
+    private Runnable connectionTimeoutRunnable;
+    private static final int CONNECTION_TIMEOUT = 10000; // 10 seconds
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,6 +87,12 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
             } else {
                 statusText.setText("Found " + deviceList.size() + " printer(s)");
             }
+        };
+
+        connectionTimeoutHandler = new Handler();
+        connectionTimeoutRunnable = () -> {
+            Log.e(TAG, "Connection timeout! No response from printer after " + CONNECTION_TIMEOUT + "ms");
+            showConnectionError("Connection timeout", "The printer did not respond. Make sure the printer is:\n\n1. Powered ON\n2. In Bluetooth pairing mode\n3. Within range\n\nTry again?");
         };
 
         scanButton.setOnClickListener(v -> {
@@ -164,7 +173,9 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
     }
 
     private void onDeviceClick(PrinterDevice device) {
-        Log.d(TAG, "Device clicked: " + device.getName() + " - " + device.getAddress());
+        Log.d(TAG, "========================================");
+        Log.d(TAG, "DEVICE CLICKED: " + device.getName() + " (" + device.getAddress() + ")");
+        Log.d(TAG, "========================================");
         stopScan();
 
         // Store selected device
@@ -173,11 +184,16 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
         // Show loading and establish BLE connection first
         progressBar.setVisibility(View.VISIBLE);
         statusText.setText("Connecting to printer...");
+        scanButton.setEnabled(false);
+
+        // Start connection timeout
+        connectionTimeoutHandler.postDelayed(connectionTimeoutRunnable, CONNECTION_TIMEOUT);
 
         // CRITICAL: Call getPrinterSn to establish BLE connection
         // This MUST be called before any WiFi operations
+        Log.d(TAG, "Calling getPrinterSn() to establish BLE connection...");
         sunmiPrinterClient.getPrinterSn(device.getAddress());
-        Log.d(TAG, "Called getPrinterSn() to establish BLE connection");
+        Log.d(TAG, "getPrinterSn() called successfully");
     }
 
     // SunmiPrinterClient.IPrinterClient callbacks
@@ -198,27 +214,38 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
 
     @Override
     public void sendDataFail(int code, String msg) {
-        Log.e(TAG, "Send data failed: " + code + " - " + msg);
+        Log.e(TAG, "========================================");
+        Log.e(TAG, "SEND DATA FAILED!");
+        Log.e(TAG, "Error Code: " + code);
+        Log.e(TAG, "Error Message: " + msg);
+        Log.e(TAG, "========================================");
+
+        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
 
         runOnUiThread(() -> {
-            progressBar.setVisibility(View.GONE);
-            statusText.setText("Connection failed: " + msg);
-            Toast.makeText(this, "Failed to connect to printer: " + msg, Toast.LENGTH_LONG).show();
+            showConnectionError("Connection Failed (Code: " + code + ")", msg + "\n\nMake sure the printer is:\n1. Powered ON\n2. In Bluetooth pairing mode\n3. Not connected to another device\n\nTry again?");
         });
     }
 
     @Override
     public void getSnRequestSuccess() {
-        Log.d(TAG, "SN request sent successfully");
+        Log.d(TAG, ">>> SN request sent successfully - waiting for response...");
     }
 
     @Override
     public void onSnReceived(String sn) {
         // BLE connection established! Now we can proceed to WiFi config
-        Log.d(TAG, "BLE connection established! Printer SN: " + sn);
+        Log.d(TAG, "========================================");
+        Log.d(TAG, "SUCCESS! BLE CONNECTION ESTABLISHED!");
+        Log.d(TAG, "Printer SN: " + sn);
+        Log.d(TAG, "========================================");
+
+        // Cancel connection timeout - we succeeded!
+        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
 
         runOnUiThread(() -> {
             progressBar.setVisibility(View.GONE);
+            scanButton.setEnabled(true);
 
             if (selectedDevice != null) {
                 Intent intent = new Intent(this, WifiConfigActivity.class);
@@ -226,10 +253,10 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
                 intent.putExtra("device_name", selectedDevice.getName() != null ? selectedDevice.getName() : "Unknown");
                 intent.putExtra("device_sn", sn);
                 startActivity(intent);
-                Log.d(TAG, "Navigating to WifiConfigActivity with BLE connection established");
+                Log.d(TAG, ">>> Navigating to WifiConfigActivity");
             } else {
-                Log.e(TAG, "selectedDevice is null in onSnReceived!");
-                statusText.setText("Error: Device not selected");
+                Log.e(TAG, "ERROR: selectedDevice is null in onSnReceived!");
+                showConnectionError("Error", "Device reference was lost. Please try again.");
             }
         });
     }
@@ -283,6 +310,27 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
         }
     }
 
+    private void showConnectionError(String title, String message) {
+        progressBar.setVisibility(View.GONE);
+        scanButton.setEnabled(true);
+        statusText.setText("Connection failed");
+
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton("Retry", (dialog, which) -> {
+                if (selectedDevice != null) {
+                    onDeviceClick(selectedDevice);
+                }
+            })
+            .setNegativeButton("Cancel", (dialog, which) -> {
+                selectedDevice = null;
+                statusText.setText("Tap Scan to find printers");
+            })
+            .setCancelable(false)
+            .show();
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -290,5 +338,6 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
             sunmiPrinterClient.stopScan();
         }
         scanTimeoutHandler.removeCallbacks(scanTimeoutRunnable);
+        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
     }
 }
