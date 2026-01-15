@@ -117,26 +117,9 @@ public class PrinterConfigHelper {
         out.flush();
         Thread.sleep(500);
 
-        // Method 2: Alternative format using AT-style commands
-        // Some Sunmi printers accept AT commands for configuration
-        String atCommand = String.format("AT+WIFI_CONF=\"%s\",\"%s\"\r\n", ssid, password);
-        out.write(atCommand.getBytes(StandardCharsets.UTF_8));
-        out.flush();
-        Thread.sleep(500);
-
-        // Method 3: ESC/POS extension command format
-        // Some models use this format
-        String configCommand = String.format("\u001B\u001F\u0010WIFI:%s,%s\n", ssid, password);
-        out.write(configCommand.getBytes(StandardCharsets.UTF_8));
-        out.flush();
-        Thread.sleep(500);
-
-        // Send end marker
-        out.write(new byte[]{0x0A}); // Line feed
-        out.flush();
-
-        Log.d(TAG, "Wi-Fi configuration commands sent to printer");
-        Log.d(TAG, "SSID: " + ssid);
+        Log.d(TAG, "Wi-Fi configuration command sent to printer");
+        Log.d(TAG, "SSID: " + ssid + " (" + ssidBytes.length + " bytes)");
+        Log.d(TAG, "Password: " + passwordBytes.length + " bytes");
 
         return true;
 
