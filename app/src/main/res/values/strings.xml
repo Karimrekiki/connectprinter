@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Sunmi Printer Config</string>
+    <string name="app_name">Bright Kitchen Printer Connect</string>
     <string name="scan_bluetooth">Scan for Printers</string>
     <string name="scanning">Scanning...</string>
     <string name="no_devices_found">No printers found</string>
