@@ -98,7 +98,7 @@ public class PrinterConfigHelper {
 
         // Method 1: Using Sunmi's proprietary Wi-Fi config command
         // Header: 0x1F 0x1B 0x1F 0x91 (Wi-Fi config command)
-        byte[] header = new byte[]{0x1F, 0x1B, 0x1F, 0x91};
+        byte[] header = new byte[]{0x1F, 0x1B, 0x1F, (byte)0x91};
         out.write(header);
 
         // SSID length (1 byte) + SSID
