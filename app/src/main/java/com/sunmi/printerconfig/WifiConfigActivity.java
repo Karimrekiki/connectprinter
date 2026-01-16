@@ -104,14 +104,16 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
 
     private void showManualEntryDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Enter Wi-Fi Details");
+        builder.setTitle("Manual Network Entry");
+        builder.setMessage("⚠️ Important: The printer likely only supports 2.4GHz WiFi.\n\n" +
+                "If your network is 5GHz only, the printer may not be able to connect even after configuration.");
 
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_manual_wifi, null);
         EditText ssidInput = dialogView.findViewById(R.id.ssidInput);
         EditText passwordInput = dialogView.findViewById(R.id.passwordInput);
 
         builder.setView(dialogView);
-        builder.setPositiveButton("Configure", (dialog, which) -> {
+        builder.setPositiveButton("Configure Anyway", (dialog, which) -> {
             String ssid = ssidInput.getText().toString().trim();
             String password = passwordInput.getText().toString();
 
@@ -185,11 +187,26 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
             scanWifiButton.setEnabled(true);
 
             if (wifiNetworks.isEmpty()) {
-                statusText.setText("No networks found. Try Manual Entry.");
+                statusText.setText("No networks found. Use Manual Entry below.");
+                showNetworkInfoDialog();
             } else {
-                statusText.setText("Found " + wifiNetworks.size() + " network(s). Tap to select.");
+                statusText.setText("Found " + wifiNetworks.size() + " network(s). Don't see yours? Use Manual Entry.");
             }
         });
+    }
+
+    private void showNetworkInfoDialog() {
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("About WiFi Networks")
+            .setMessage("The printer only shows 2.4GHz WiFi networks it can detect.\n\n" +
+                    "If your network isn't shown:\n" +
+                    "• Your network might be 5GHz only\n" +
+                    "• Use the 'Manual Entry' button below\n" +
+                    "• Make sure your router has 2.4GHz enabled\n\n" +
+                    "Note: Most Sunmi printers only support 2.4GHz WiFi.")
+            .setPositiveButton("Got it", null)
+            .setNegativeButton("Manual Entry", (dialog, which) -> showManualEntryDialog())
+            .show();
     }
 
     @Override
