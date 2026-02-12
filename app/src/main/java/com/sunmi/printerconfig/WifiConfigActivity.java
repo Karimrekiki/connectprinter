@@ -100,13 +100,29 @@ public class WifiConfigActivity extends AppCompatActivity {
 
         // Get configured networks (the tablet's saved networks)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            List<WifiConfiguration> configs = wifiManager.getConfiguredNetworks();
-            if (configs != null) {
-                for (WifiConfiguration config : configs) {
-                    String ssid = config.SSID.replace("\"", "");
-                    if (!networkList.contains(ssid)) {
-                        networkList.add(ssid);
+            boolean hasLocationPermission = ContextCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+            boolean hasWifiStatePermission = ContextCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_WIFI_STATE) == PackageManager.PERMISSION_GRANTED;
+
+            if (!hasLocationPermission) {
+                requestWifiPermissions();
+                return;
+            }
+
+            if (hasWifiStatePermission) {
+                try {
+                    List<WifiConfiguration> configs = wifiManager.getConfiguredNetworks();
+                    if (configs != null) {
+                        for (WifiConfiguration config : configs) {
+                            String ssid = config.SSID.replace("\"", "");
+                            if (!networkList.contains(ssid)) {
+                                networkList.add(ssid);
+                            }
+                        }
                     }
+                } catch (SecurityException ignored) {
+                    // Fall back to manual network entry below.
                 }
             }
         }
@@ -125,11 +141,18 @@ public class WifiConfigActivity extends AppCompatActivity {
     }
 
     private boolean checkWifiPermissions() {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
+            return true;
+        }
         return ContextCompat.checkSelfPermission(this,
             Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
     }
 
     private void requestWifiPermissions() {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
+            loadWifiNetworks();
+            return;
+        }
         ActivityCompat.requestPermissions(this,
             new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, PERMISSION_REQUEST_CODE);
     }
