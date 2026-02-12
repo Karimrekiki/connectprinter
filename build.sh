@@ -9,7 +9,7 @@ echo "======================================="
 echo ""
 
 # Check if Android SDK is set
-if [ -z "$ANDROID_HOME" ] && [ ! -f "local.properties" ]; then
+if [ -z "${ANDROID_HOME:-}" ] && [ ! -f "local.properties" ]; then
     echo "ERROR: Android SDK not found!"
     echo "Please either:"
     echo "  1. Set ANDROID_HOME environment variable, or"
@@ -19,6 +19,14 @@ if [ -z "$ANDROID_HOME" ] && [ ! -f "local.properties" ]; then
 fi
 
 BUILD_TYPE="${1:-debug}"
+
+if [ "$BUILD_TYPE" = "release" ] && [ ! -f "keystore.properties" ]; then
+    echo ""
+    echo "ERROR: keystore.properties is missing."
+    echo "Copy keystore.properties.template to keystore.properties and fill your signing values."
+    echo ""
+    exit 1
+fi
 
 echo "Cleaning previous build..."
 ./gradlew clean
