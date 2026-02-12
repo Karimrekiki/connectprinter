@@ -72,11 +72,11 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ### Build Release Version
 
 ```bash
-./gradlew assembleRelease
-# Output: app/build/outputs/apk/release/app-release-unsigned.apk
+./gradlew bundleRelease
+# Output: app/build/outputs/bundle/release/app-release.aab
 ```
 
-For detailed instructions, see [README.md](README.md)
+For detailed Play Store instructions, see [PLAY_STORE_RELEASE.md](PLAY_STORE_RELEASE.md).
 
 ---
 
@@ -92,9 +92,9 @@ For detailed instructions, see [README.md](README.md)
 2. Users scan the QR code with their Android device
 3. Download and install the APK
 
-### Method 3: Google Play Store (Optional)
+### Method 3: Google Play Store
 1. Sign up for Google Play Developer account
-2. Create signed APK with release key
+2. Create signed release AAB (`./gradlew bundleRelease`)
 3. Upload to Play Store Console
 4. Users can install from Play Store
 

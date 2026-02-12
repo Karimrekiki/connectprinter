@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Build script for Sunmi Printer Configuration App
 
@@ -17,16 +18,27 @@ if [ -z "$ANDROID_HOME" ] && [ ! -f "local.properties" ]; then
     exit 1
 fi
 
-# Clean previous build
+BUILD_TYPE="${1:-debug}"
+
 echo "Cleaning previous build..."
 ./gradlew clean
 
-# Build debug APK
-echo ""
-echo "Building debug APK..."
-./gradlew assembleDebug
-
-if [ $? -eq 0 ]; then
+if [ "$BUILD_TYPE" = "release" ]; then
+    echo ""
+    echo "Building release AAB..."
+    ./gradlew bundleRelease
+    echo ""
+    echo "======================================="
+    echo "Build Successful!"
+    echo "======================================="
+    echo "Bundle Location: app/build/outputs/bundle/release/app-release.aab"
+    echo ""
+    echo "For Play upload steps, see PLAY_STORE_RELEASE.md"
+    echo ""
+else
+    echo ""
+    echo "Building debug APK..."
+    ./gradlew assembleDebug
     echo ""
     echo "======================================="
     echo "Build Successful!"
@@ -36,12 +48,4 @@ if [ $? -eq 0 ]; then
     echo "To install on device:"
     echo "  adb install app/build/outputs/apk/debug/app-debug.apk"
     echo ""
-else
-    echo ""
-    echo "======================================="
-    echo "Build Failed!"
-    echo "======================================="
-    echo "Please check the error messages above."
-    echo ""
-    exit 1
 fi

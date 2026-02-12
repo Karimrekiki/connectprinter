@@ -41,11 +41,17 @@ An Android application for configuring Sunmi printers' Wi-Fi settings via Blueto
    ```bash
    cd connectprinter
    ```
-4. Build the APK:
+4. Build the debug APK:
    ```bash
-   ./gradlew assembleRelease
+   ./gradlew assembleDebug
    ```
-5. The APK will be generated at: `app/build/outputs/apk/release/app-release-unsigned.apk`
+5. Build the Play Store release bundle:
+   ```bash
+   ./gradlew bundleRelease
+   ```
+6. Outputs:
+   - Debug APK: `app/build/outputs/apk/debug/app-debug.apk`
+   - Release AAB: `app/build/outputs/bundle/release/app-release.aab`
 
 ### Option 3: Build with Gradle Wrapper (Recommended)
 
@@ -58,6 +64,8 @@ gradlew.bat clean assembleDebug
 ```
 
 The debug APK will be at: `app/build/outputs/apk/debug/app-debug.apk`
+
+For end-to-end Play upload steps, see [PLAY_STORE_RELEASE.md](PLAY_STORE_RELEASE.md).
 
 ## How to Install
 
@@ -108,8 +116,8 @@ Once configuration is successful, the printer should automatically connect to th
 The app requires the following permissions:
 
 - **Bluetooth**: To scan for and connect to printers
-- **Bluetooth Admin**: To manage Bluetooth connections
-- **Location**: Required by Android for Wi-Fi network scanning
+- **Bluetooth Admin**: Used on Android 11 and lower for legacy Bluetooth behavior
+- **Location (Android 6-11 only)**: Required by Android system behavior for Bluetooth discovery
 - **Wi-Fi State**: To read available Wi-Fi networks
 - **Change Wi-Fi State**: To configure Wi-Fi settings
 
