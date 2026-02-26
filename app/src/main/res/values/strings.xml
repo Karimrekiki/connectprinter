@@ -36,6 +36,9 @@
     <string name="connecting_to_printer">Connecting to printer...</string>
     <string name="sending_wifi_to_printer">Sending Wi-Fi credentials to printer...</string>
     <string name="printer_connection_timeout">Printer connection timed out. Keep the printer close and retry.</string>
+    <string name="printer_scan_failed">Failed to scan for compatible printers.</string>
+    <string name="no_compatible_printers_found">No compatible printers found. Make sure the printer is in pairing/config mode and retry.</string>
+    <string name="printers_found">%1$d compatible printer(s) found</string>
     <string name="printer_wifi_config_timeout">Printer did not confirm Wi-Fi configuration in time. Check Wi-Fi (2.4GHz/WPA2) and retry.</string>
     <string name="printer_connection_failed">Unable to connect to printer over Bluetooth.</string>
     <string name="wifi_push_failed_try_24g">Failed to configure Wi-Fi. Confirm 2.4GHz WPA/WPA2 network and retry.</string>
