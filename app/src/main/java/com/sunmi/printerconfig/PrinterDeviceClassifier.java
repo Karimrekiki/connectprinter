@@ -14,6 +14,7 @@ public final class PrinterDeviceClassifier {
         String normalizedName = deviceName.toUpperCase(Locale.ROOT);
         return normalizedName.startsWith("NT311")
             || normalizedName.contains("CLOUDPRINTER")
+            || normalizedName.contains("CLOUD PRINT")
             || normalizedName.contains("SUNMI");
     }
 }
