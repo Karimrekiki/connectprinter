@@ -28,4 +28,13 @@
     <string name="wifi_no_networks_found">No Wi-Fi networks found. Enter SSID manually.</string>
     <string name="wifi_networks_found">%1$d Wi-Fi networks found</string>
     <string name="wifi_scan_failed">Unable to refresh Wi-Fi scan results</string>
+    <string name="select_or_enter_wifi_network">Please select or enter a Wi-Fi network</string>
+    <string name="enter_wifi_password">Please enter Wi-Fi password</string>
+    <string name="connecting_to_printer">Connecting to printer...</string>
+    <string name="sending_wifi_to_printer">Sending Wi-Fi credentials to printer...</string>
+    <string name="printer_connection_timeout">Printer connection timed out. Keep the printer close and retry.</string>
+    <string name="printer_connection_failed">Unable to connect to printer over Bluetooth.</string>
+    <string name="wifi_push_failed_try_24g">Failed to configure Wi-Fi. Confirm 2.4GHz WPA/WPA2 network and retry.</string>
+    <string name="wifi_push_error_with_code">Printer communication error (%1$d): %2$s</string>
+    <string name="printer_address_unavailable">Printer Bluetooth address is unavailable.</string>
 </resources>

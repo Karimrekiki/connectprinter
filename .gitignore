@@ -1,6 +1,7 @@
 # Built application files
 *.apk
 *.aar
+!app/libs/BluetoothBinding.aar
 *.ap_
 *.aab
 

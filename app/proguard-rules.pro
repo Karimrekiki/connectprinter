@@ -10,3 +10,7 @@
 
 # Keep printer configuration classes
 -keep class com.sunmi.printerconfig.** { *; }
+
+# Keep Sunmi SDK callback interfaces/classes used during Wi-Fi configuration.
+-keep class com.sunmi.cloudprinter.** { *; }
+-keep interface com.sunmi.cloudprinter.** { *; }
