@@ -18,4 +18,14 @@
     <string name="unknown_device">Unknown Device</string>
     <string name="likely_sunmi">Likely Sunmi</string>
     <string name="permission_required_short">Permission Required</string>
+    <string name="manual_entry_option">Enter SSID manually</string>
+    <string name="wifi_ssid">Wi-Fi SSID</string>
+    <string name="enter_wifi_ssid">Enter Wi-Fi network name</string>
+    <string name="wifi_scanning">Scanning Wi-Fi networks...</string>
+    <string name="wifi_scan_permissions_required">Permissions are required to scan Wi-Fi networks</string>
+    <string name="wifi_enable_required">Turn on Wi-Fi to scan networks</string>
+    <string name="wifi_enable_location_required">Turn on Location to scan Wi-Fi networks</string>
+    <string name="wifi_no_networks_found">No Wi-Fi networks found. Enter SSID manually.</string>
+    <string name="wifi_networks_found">%1$d Wi-Fi networks found</string>
+    <string name="wifi_scan_failed">Unable to refresh Wi-Fi scan results</string>
 </resources>

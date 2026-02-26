@@ -2,16 +2,22 @@ package com.sunmi.printerconfig;
 
 import android.Manifest;
 import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.net.wifi.WifiConfiguration;
+import android.location.LocationManager;
+import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -23,6 +29,8 @@ import androidx.core.content.ContextCompat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 
 public class WifiConfigActivity extends AppCompatActivity {
     private static final int PERMISSION_REQUEST_CODE = 3;
@@ -31,11 +39,26 @@ public class WifiConfigActivity extends AppCompatActivity {
     private TextView printerNameText;
     private Spinner wifiSpinner;
     private EditText passwordInput;
+    private EditText manualSsidInput;
+    private LinearLayout manualSsidContainer;
     private Button configureButton;
     private ProgressBar progressBar;
     private TextView statusText;
     private WifiManager wifiManager;
     private PrinterConfigHelper printerHelper;
+
+    private ArrayAdapter<String> wifiAdapter;
+    private final List<String> availableSsids = new ArrayList<>();
+    private boolean wifiReceiverRegistered = false;
+
+    private final BroadcastReceiver wifiScanReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (WifiManager.SCAN_RESULTS_AVAILABLE_ACTION.equals(intent.getAction())) {
+                updateNetworksFromScanResults();
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,6 +75,8 @@ public class WifiConfigActivity extends AppCompatActivity {
         printerNameText = findViewById(R.id.printerNameText);
         wifiSpinner = findViewById(R.id.wifiSpinner);
         passwordInput = findViewById(R.id.passwordInput);
+        manualSsidInput = findViewById(R.id.manualSsidInput);
+        manualSsidContainer = findViewById(R.id.manualSsidContainer);
         configureButton = findViewById(R.id.configureButton);
         progressBar = findViewById(R.id.progressBar);
         statusText = findViewById(R.id.statusText);
@@ -59,25 +84,25 @@ public class WifiConfigActivity extends AppCompatActivity {
         wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         printerHelper = new PrinterConfigHelper(this);
 
-        boolean hasPermission = true;
+        boolean hasBluetoothPermission = true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            hasPermission = ContextCompat.checkSelfPermission(this,
+            hasBluetoothPermission = ContextCompat.checkSelfPermission(this,
                 Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
         }
 
-        if (hasPermission) {
+        if (hasBluetoothPermission) {
             String deviceName = device.getName();
             printerNameText.setText(getString(R.string.connected_to, deviceName != null ? deviceName : "Unknown"));
         }
 
-        loadWifiNetworks();
+        setupWifiSpinner();
 
         configureButton.setOnClickListener(v -> {
-            String selectedSsid = (String) wifiSpinner.getSelectedItem();
+            String selectedSsid = resolveSelectedSsid();
             String password = passwordInput.getText().toString();
 
-            if (selectedSsid == null || selectedSsid.isEmpty()) {
-                Toast.makeText(this, "Please select a Wi-Fi network", Toast.LENGTH_SHORT).show();
+            if (selectedSsid.isEmpty()) {
+                Toast.makeText(this, "Please select or enter a Wi-Fi network", Toast.LENGTH_SHORT).show();
                 return;
             }
 
@@ -90,71 +115,229 @@ public class WifiConfigActivity extends AppCompatActivity {
         });
     }
 
-    private void loadWifiNetworks() {
+    @Override
+    protected void onStart() {
+        super.onStart();
+        registerWifiScanReceiver();
+        refreshWifiNetworks();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        unregisterWifiScanReceiver();
+    }
+
+    private void setupWifiSpinner() {
+        wifiAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, new ArrayList<>());
+        wifiAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        wifiSpinner.setAdapter(wifiAdapter);
+
+        wifiSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                boolean manualSelected = isManualEntrySelected(position);
+                manualSsidContainer.setVisibility(manualSelected ? View.VISIBLE : View.GONE);
+                if (!manualSelected) {
+                    manualSsidInput.setText("");
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> parent) {
+                manualSsidContainer.setVisibility(View.GONE);
+            }
+        });
+
+        updateWifiSpinner();
+    }
+
+    private String resolveSelectedSsid() {
+        int selectedPosition = wifiSpinner.getSelectedItemPosition();
+        if (selectedPosition < 0) {
+            return "";
+        }
+
+        if (isManualEntrySelected(selectedPosition)) {
+            return manualSsidInput.getText().toString().trim();
+        }
+
+        if (selectedPosition >= availableSsids.size()) {
+            return "";
+        }
+
+        return availableSsids.get(selectedPosition);
+    }
+
+    private boolean isManualEntrySelected(int position) {
+        return wifiAdapter != null && position == wifiAdapter.getCount() - 1;
+    }
+
+    private void refreshWifiNetworks() {
+        if (!wifiManager.isWifiEnabled()) {
+            showManualEntryOnly(getString(R.string.wifi_enable_required));
+            return;
+        }
+
         if (!checkWifiPermissions()) {
             requestWifiPermissions();
             return;
         }
 
-        List<String> networkList = new ArrayList<>();
+        if (!isLocationEnabled()) {
+            showManualEntryOnly(getString(R.string.wifi_enable_location_required));
+            return;
+        }
 
-        // Get configured networks (the tablet's saved networks)
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            boolean hasLocationPermission = ContextCompat.checkSelfPermission(this,
-                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-            boolean hasWifiStatePermission = ContextCompat.checkSelfPermission(this,
-                Manifest.permission.ACCESS_WIFI_STATE) == PackageManager.PERMISSION_GRANTED;
+        progressBar.setVisibility(View.VISIBLE);
+        statusText.setText(R.string.wifi_scanning);
 
-            if (!hasLocationPermission) {
-                requestWifiPermissions();
-                return;
+        boolean scanStarted;
+        try {
+            scanStarted = wifiManager.startScan();
+        } catch (SecurityException e) {
+            scanStarted = false;
+        }
+
+        if (!scanStarted) {
+            updateNetworksFromScanResults();
+            if (availableSsids.isEmpty()) {
+                statusText.setText(R.string.wifi_scan_failed);
             }
+        }
+    }
 
-            if (hasWifiStatePermission) {
-                try {
-                    List<WifiConfiguration> configs = wifiManager.getConfiguredNetworks();
-                    if (configs != null) {
-                        for (WifiConfiguration config : configs) {
-                            String ssid = config.SSID.replace("\"", "");
-                            if (!networkList.contains(ssid)) {
-                                networkList.add(ssid);
-                            }
-                        }
+    private void updateNetworksFromScanResults() {
+        Set<String> uniqueSsids = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+
+        try {
+            List<ScanResult> scanResults = wifiManager.getScanResults();
+            for (ScanResult result : scanResults) {
+                if (result.SSID != null) {
+                    String ssid = result.SSID.trim();
+                    if (!ssid.isEmpty()) {
+                        uniqueSsids.add(ssid);
                     }
-                } catch (SecurityException ignored) {
-                    // Fall back to manual network entry below.
                 }
             }
+        } catch (SecurityException e) {
+            showManualEntryOnly(getString(R.string.wifi_scan_permissions_required));
+            return;
         }
 
-        // Add some common network detection
-        // Note: On Android 10+, scanning requires location and is limited
-        if (networkList.isEmpty()) {
-            // Add placeholder for manual entry if scanning fails
-            networkList.add("Enter manually below");
-        }
+        availableSsids.clear();
+        availableSsids.addAll(uniqueSsids);
+        updateWifiSpinner();
 
-        ArrayAdapter<String> adapter = new ArrayAdapter<>(this,
-            android.R.layout.simple_spinner_item, networkList);
-        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        wifiSpinner.setAdapter(adapter);
+        progressBar.setVisibility(View.GONE);
+        if (availableSsids.isEmpty()) {
+            statusText.setText(R.string.wifi_no_networks_found);
+            manualSsidContainer.setVisibility(View.VISIBLE);
+            wifiSpinner.setSelection(wifiAdapter.getCount() - 1);
+        } else {
+            statusText.setText(getString(R.string.wifi_networks_found, availableSsids.size()));
+        }
+    }
+
+    private void updateWifiSpinner() {
+        List<String> spinnerOptions = new ArrayList<>(availableSsids);
+        spinnerOptions.add(getString(R.string.manual_entry_option));
+
+        wifiAdapter.clear();
+        wifiAdapter.addAll(spinnerOptions);
+        wifiAdapter.notifyDataSetChanged();
+    }
+
+    private void showManualEntryOnly(String message) {
+        progressBar.setVisibility(View.GONE);
+        availableSsids.clear();
+        updateWifiSpinner();
+
+        statusText.setText(message);
+        manualSsidContainer.setVisibility(View.VISIBLE);
+
+        if (wifiAdapter.getCount() > 0) {
+            wifiSpinner.setSelection(wifiAdapter.getCount() - 1);
+        }
     }
 
     private boolean checkWifiPermissions() {
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
-            return true;
-        }
-        return ContextCompat.checkSelfPermission(this,
+        boolean hasLocationPermission = ContextCompat.checkSelfPermission(this,
             Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+
+        if (!hasLocationPermission) {
+            return false;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return ContextCompat.checkSelfPermission(this,
+                Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED;
+        }
+
+        return true;
     }
 
     private void requestWifiPermissions() {
-        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.R) {
-            loadWifiNetworks();
+        List<String> permissions = new ArrayList<>();
+
+        if (ContextCompat.checkSelfPermission(this,
+            Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this,
+                Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES);
+        }
+
+        if (permissions.isEmpty()) {
+            refreshWifiNetworks();
             return;
         }
+
         ActivityCompat.requestPermissions(this,
-            new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, PERMISSION_REQUEST_CODE);
+            permissions.toArray(new String[0]), PERMISSION_REQUEST_CODE);
+    }
+
+    private boolean isLocationEnabled() {
+        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (locationManager == null) {
+            return false;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            return locationManager.isLocationEnabled();
+        }
+
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+            || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+    }
+
+    private void registerWifiScanReceiver() {
+        if (wifiReceiverRegistered) {
+            return;
+        }
+
+        IntentFilter filter = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(wifiScanReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(wifiScanReceiver, filter);
+        }
+        wifiReceiverRegistered = true;
+    }
+
+    private void unregisterWifiScanReceiver() {
+        if (!wifiReceiverRegistered) {
+            return;
+        }
+
+        try {
+            unregisterReceiver(wifiScanReceiver);
+        } catch (IllegalArgumentException ignored) {
+        }
+        wifiReceiverRegistered = false;
     }
 
     private void configurePrinter(String ssid, String password) {
@@ -205,9 +388,9 @@ public class WifiConfigActivity extends AppCompatActivity {
                 }
             }
             if (allGranted) {
-                loadWifiNetworks();
+                refreshWifiNetworks();
             } else {
-                Toast.makeText(this, "Permissions required to scan Wi-Fi networks",
+                Toast.makeText(this, R.string.wifi_scan_permissions_required,
                     Toast.LENGTH_SHORT).show();
             }
         }

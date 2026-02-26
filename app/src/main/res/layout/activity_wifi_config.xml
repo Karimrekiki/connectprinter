@@ -46,13 +46,39 @@
         android:layout_marginTop="8dp"
         android:minHeight="48dp"/>
 
+    <LinearLayout
+        android:id="@+id/manualSsidContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="vertical"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/wifiSpinner">
+
+        <TextView
+            android:id="@+id/manualSsidLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/wifi_ssid"
+            android:textSize="16sp" />
+
+        <EditText
+            android:id="@+id/manualSsidInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/enter_wifi_ssid"
+            android:inputType="text"
+            android:minHeight="48dp" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/passwordLabel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="@string/wifi_password"
         android:textSize="16sp"
-        app:layout_constraintTop_toBottomOf="@id/wifiSpinner"
+        app:layout_constraintTop_toBottomOf="@id/manualSsidContainer"
         android:layout_marginTop="24dp"/>
 
     <EditText
