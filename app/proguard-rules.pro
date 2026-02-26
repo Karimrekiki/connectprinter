@@ -14,3 +14,8 @@
 # Keep Sunmi SDK callback interfaces/classes used during Wi-Fi configuration.
 -keep class com.sunmi.cloudprinter.** { *; }
 -keep interface com.sunmi.cloudprinter.** { *; }
+
+# Keep callback implementers and SDK internals that may be invoked reflectively.
+-keep class * implements com.sunmi.cloudprinter.presenter.SunmiPrinterClient$IPrinterClient { *; }
+-keep class library.** { *; }
+-keep class com.inuker.bluetooth.library.** { *; }

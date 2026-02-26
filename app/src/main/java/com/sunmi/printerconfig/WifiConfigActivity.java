@@ -12,8 +12,6 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -41,10 +39,9 @@ import java.util.TreeSet;
 
 public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinterClient.IPrinterClient {
     private static final int PERMISSION_REQUEST_CODE = 3;
-    private static final int PRINTER_CONNECTION_TIMEOUT_MS = 10_000;
 
-    private BluetoothDevice device;
     private String printerAddress;
+    private String printerName;
 
     private TextView printerNameText;
     private Spinner wifiSpinner;
@@ -62,17 +59,6 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
     private final List<String> availableSsids = new ArrayList<>();
     private boolean wifiReceiverRegistered = false;
 
-    private final Handler connectionTimeoutHandler = new Handler(Looper.getMainLooper());
-    private boolean waitingForPrinterConnection = false;
-    private String pendingSsid;
-    private String pendingPassword;
-
-    private final Runnable connectionTimeoutRunnable = () -> {
-        if (waitingForPrinterConnection) {
-            handleConfigurationFailure(getString(R.string.printer_connection_timeout));
-        }
-    };
-
     private final BroadcastReceiver wifiScanReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
@@ -87,18 +73,28 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_wifi_config);
 
-        device = getIntent().getParcelableExtra("device");
-        if (device == null) {
-            Toast.makeText(this, "Error: No device selected", Toast.LENGTH_SHORT).show();
-            finish();
-            return;
+        printerAddress = getIntent().getStringExtra("device_address");
+        printerName = getIntent().getStringExtra("device_name");
+
+        // Backward-compatibility fallback for old intents.
+        if ((printerAddress == null || printerAddress.isEmpty()) || printerName == null) {
+            BluetoothDevice device = getIntent().getParcelableExtra("device");
+            if (device != null) {
+                printerAddress = safeGetDeviceAddress(device);
+                if (printerName == null || printerName.isEmpty()) {
+                    printerName = safeGetDeviceName(device);
+                }
+            }
         }
 
-        printerAddress = resolveDeviceAddress(device);
         if (printerAddress == null || printerAddress.isEmpty()) {
             Toast.makeText(this, R.string.printer_address_unavailable, Toast.LENGTH_LONG).show();
             finish();
             return;
+        }
+
+        if (printerName == null || printerName.isEmpty()) {
+            printerName = getString(R.string.unknown_device);
         }
 
         printerNameText = findViewById(R.id.printerNameText);
@@ -113,18 +109,7 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         sunmiPrinterClient = new SunmiPrinterClient(this, this);
 
-        boolean hasBluetoothPermission = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            hasBluetoothPermission = ContextCompat.checkSelfPermission(this,
-                Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED;
-        }
-
-        if (hasBluetoothPermission) {
-            String deviceName = device.getName();
-            printerNameText.setText(getString(R.string.connected_to, deviceName != null ? deviceName : "Unknown"));
-        } else {
-            printerNameText.setText(getString(R.string.connected_to, getString(R.string.unknown_device)));
-        }
+        printerNameText.setText(getString(R.string.connected_to, printerName));
 
         setupWifiSpinner();
 
@@ -162,17 +147,28 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
+
         if (sunmiPrinterClient != null && printerAddress != null && !printerAddress.isEmpty()) {
-            sunmiPrinterClient.disconnect(printerAddress);
+            try {
+                sunmiPrinterClient.disconnect(printerAddress);
+            } catch (Throwable ignored) {
+            }
         }
     }
 
-    private String resolveDeviceAddress(BluetoothDevice bluetoothDevice) {
+    private String safeGetDeviceAddress(BluetoothDevice device) {
         try {
-            return bluetoothDevice.getAddress();
+            return device.getAddress() == null ? "" : device.getAddress();
         } catch (SecurityException e) {
             return "";
+        }
+    }
+
+    private String safeGetDeviceName(BluetoothDevice device) {
+        try {
+            return device.getName() == null ? getString(R.string.unknown_device) : device.getName();
+        } catch (SecurityException e) {
+            return getString(R.string.unknown_device);
         }
     }
 
@@ -202,7 +198,11 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
 
     private String resolveSelectedSsid() {
         int selectedPosition = wifiSpinner.getSelectedItemPosition();
+
         if (selectedPosition < 0) {
+            if (!availableSsids.isEmpty()) {
+                return availableSsids.get(0);
+            }
             return "";
         }
 
@@ -280,8 +280,6 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         progressBar.setVisibility(View.GONE);
         if (availableSsids.isEmpty()) {
             statusText.setText(R.string.wifi_no_networks_found);
-            manualSsidContainer.setVisibility(View.VISIBLE);
-            wifiSpinner.setSelection(wifiAdapter.getCount() - 1);
         } else {
             statusText.setText(getString(R.string.wifi_networks_found, availableSsids.size()));
         }
@@ -294,6 +292,18 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         wifiAdapter.clear();
         wifiAdapter.addAll(spinnerOptions);
         wifiAdapter.notifyDataSetChanged();
+
+        if (wifiAdapter.getCount() == 0) {
+            return;
+        }
+
+        if (availableSsids.isEmpty()) {
+            wifiSpinner.setSelection(wifiAdapter.getCount() - 1);
+            manualSsidContainer.setVisibility(View.VISIBLE);
+        } else {
+            wifiSpinner.setSelection(0);
+            manualSsidContainer.setVisibility(View.GONE);
+        }
     }
 
     private void showManualEntryOnly(String message) {
@@ -302,11 +312,6 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         updateWifiSpinner();
 
         statusText.setText(message);
-        manualSsidContainer.setVisibility(View.VISIBLE);
-
-        if (wifiAdapter.getCount() > 0) {
-            wifiSpinner.setSelection(wifiAdapter.getCount() - 1);
-        }
     }
 
     private boolean checkWifiPermissions() {
@@ -389,46 +394,19 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
     }
 
     private void configurePrinter(String ssid, String password) {
-        pendingSsid = ssid;
-        pendingPassword = password;
-
         configureButton.setEnabled(false);
         progressBar.setVisibility(View.VISIBLE);
-        statusText.setText(R.string.connecting_to_printer);
-
-        waitingForPrinterConnection = true;
-        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
-        connectionTimeoutHandler.postDelayed(connectionTimeoutRunnable, PRINTER_CONNECTION_TIMEOUT_MS);
+        statusText.setText(R.string.sending_wifi_to_printer);
 
         try {
-            sunmiPrinterClient.getPrinterSn(printerAddress);
-        } catch (Exception e) {
-            handleConfigurationFailure(getString(R.string.printer_connection_failed));
-        }
-    }
-
-    private void sendWifiConfiguration() {
-        if (pendingSsid == null || pendingSsid.isEmpty()) {
-            handleConfigurationFailure(getString(R.string.select_or_enter_wifi_network));
-            return;
-        }
-
-        statusText.setText(R.string.configuring);
-
-        try {
-            byte[] ssidBytes = pendingSsid.getBytes(StandardCharsets.UTF_8);
-            sunmiPrinterClient.setPrinterWifi(printerAddress, ssidBytes, pendingPassword == null ? "" : pendingPassword);
-        } catch (Exception e) {
+            byte[] ssidBytes = ssid.getBytes(StandardCharsets.UTF_8);
+            sunmiPrinterClient.setPrinterWifi(printerAddress, ssidBytes, password);
+        } catch (Throwable t) {
             handleConfigurationFailure(getString(R.string.wifi_push_failed_try_24g));
         }
     }
 
     private void handleConfigurationSuccess() {
-        pendingSsid = null;
-        pendingPassword = null;
-        waitingForPrinterConnection = false;
-        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
-
         runOnUiThread(() -> {
             progressBar.setVisibility(View.GONE);
             configureButton.setEnabled(true);
@@ -439,11 +417,6 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
     }
 
     private void handleConfigurationFailure(String message) {
-        pendingSsid = null;
-        pendingPassword = null;
-        waitingForPrinterConnection = false;
-        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
-
         runOnUiThread(() -> {
             progressBar.setVisibility(View.GONE);
             configureButton.setEnabled(true);
@@ -474,7 +447,7 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
 
     @Override
     public void onSetWifiSuccess() {
-        runOnUiThread(() -> statusText.setText(R.string.sending_wifi_to_printer));
+        runOnUiThread(() -> statusText.setText(R.string.configuring));
     }
 
     @Override
@@ -489,20 +462,18 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
 
     @Override
     public void sendDataFail(int code, String msg) {
-        String failureMessage = getString(R.string.wifi_push_error_with_code, code, msg);
+        String failureMessage = getString(R.string.wifi_push_error_with_code, code, msg == null ? "Unknown" : msg);
         handleConfigurationFailure(failureMessage);
     }
 
     @Override
     public void getSnRequestSuccess() {
-        // Request accepted; wait for onSnReceived callback.
+        // Not used in this activity.
     }
 
     @Override
     public void onSnReceived(String sn) {
-        waitingForPrinterConnection = false;
-        connectionTimeoutHandler.removeCallbacks(connectionTimeoutRunnable);
-        runOnUiThread(this::sendWifiConfiguration);
+        // Not used in this activity.
     }
 
     @Override
@@ -519,8 +490,7 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
             if (allGranted) {
                 refreshWifiNetworks();
             } else {
-                Toast.makeText(this, R.string.wifi_scan_permissions_required,
-                    Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, R.string.wifi_scan_permissions_required, Toast.LENGTH_SHORT).show();
             }
         }
     }
