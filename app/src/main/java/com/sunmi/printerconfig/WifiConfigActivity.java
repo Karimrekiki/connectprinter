@@ -1,17 +1,9 @@
 package com.sunmi.printerconfig;
 
-import android.Manifest;
 import android.bluetooth.BluetoothDevice;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.pm.PackageManager;
-import android.location.LocationManager;
-import android.net.wifi.ScanResult;
-import android.net.wifi.WifiManager;
-import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -24,8 +16,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
 
 import com.sunmi.cloudprinter.bean.PrinterDevice;
 import com.sunmi.cloudprinter.bean.Router;
@@ -34,11 +24,9 @@ import com.sunmi.cloudprinter.presenter.SunmiPrinterClient;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
 
 public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinterClient.IPrinterClient {
-    private static final int PERMISSION_REQUEST_CODE = 3;
+    private static final int WIFI_CONFIG_TIMEOUT_MS = 25_000;
 
     private String printerAddress;
     private String printerName;
@@ -52,19 +40,16 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
     private ProgressBar progressBar;
     private TextView statusText;
 
-    private WifiManager wifiManager;
     private SunmiPrinterClient sunmiPrinterClient;
 
     private ArrayAdapter<String> wifiAdapter;
-    private final List<String> availableSsids = new ArrayList<>();
-    private boolean wifiReceiverRegistered = false;
+    private final List<Router> availableRouters = new ArrayList<>();
+    private boolean waitingForWifiConfigResult = false;
 
-    private final BroadcastReceiver wifiScanReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (WifiManager.SCAN_RESULTS_AVAILABLE_ACTION.equals(intent.getAction())) {
-                updateNetworksFromScanResults();
-            }
+    private final Handler wifiConfigTimeoutHandler = new Handler(Looper.getMainLooper());
+    private final Runnable wifiConfigTimeoutRunnable = () -> {
+        if (waitingForWifiConfigResult) {
+            handleConfigurationFailure(getString(R.string.printer_wifi_config_timeout));
         }
     };
 
@@ -76,7 +61,6 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         printerAddress = getIntent().getStringExtra("device_address");
         printerName = getIntent().getStringExtra("device_name");
 
-        // Backward-compatibility fallback for old intents.
         if ((printerAddress == null || printerAddress.isEmpty()) || printerName == null) {
             BluetoothDevice device = getIntent().getParcelableExtra("device");
             if (device != null) {
@@ -106,7 +90,6 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         progressBar = findViewById(R.id.progressBar);
         statusText = findViewById(R.id.statusText);
 
-        wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
         sunmiPrinterClient = new SunmiPrinterClient(this, this);
 
         printerNameText.setText(getString(R.string.connected_to, printerName));
@@ -114,39 +97,39 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         setupWifiSpinner();
 
         configureButton.setOnClickListener(v -> {
-            String selectedSsid = resolveSelectedSsid();
+            Router selectedRouter = resolveSelectedRouter();
+            String manualSsid = manualSsidInput.getText().toString().trim();
             String password = passwordInput.getText().toString();
 
-            if (selectedSsid.isEmpty()) {
-                Toast.makeText(this, R.string.select_or_enter_wifi_network, Toast.LENGTH_SHORT).show();
+            if (selectedRouter == null) {
+                if (manualSsid.isEmpty()) {
+                    Toast.makeText(this, R.string.select_or_enter_wifi_network, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                configurePrinter(buildManualRouter(manualSsid), password);
                 return;
             }
 
-            if (password.isEmpty()) {
+            if (selectedRouter.isHasPwd() && password.isEmpty()) {
                 Toast.makeText(this, R.string.enter_wifi_password, Toast.LENGTH_SHORT).show();
                 return;
             }
 
-            configurePrinter(selectedSsid, password);
+            configurePrinter(selectedRouter, password);
         });
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        registerWifiScanReceiver();
-        refreshWifiNetworks();
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        unregisterWifiScanReceiver();
+        loadNetworksFromPrinter();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        waitingForWifiConfigResult = false;
+        wifiConfigTimeoutHandler.removeCallbacks(wifiConfigTimeoutRunnable);
 
         if (sunmiPrinterClient != null && printerAddress != null && !printerAddress.isEmpty()) {
             try {
@@ -196,217 +179,105 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         updateWifiSpinner();
     }
 
-    private String resolveSelectedSsid() {
+    private Router resolveSelectedRouter() {
         int selectedPosition = wifiSpinner.getSelectedItemPosition();
 
-        if (selectedPosition < 0) {
-            if (!availableSsids.isEmpty()) {
-                return availableSsids.get(0);
-            }
-            return "";
+        if (selectedPosition < 0 || selectedPosition >= availableRouters.size()) {
+            return null;
         }
 
         if (isManualEntrySelected(selectedPosition)) {
-            return manualSsidInput.getText().toString().trim();
+            return null;
         }
 
-        if (selectedPosition >= availableSsids.size()) {
-            return "";
-        }
-
-        return availableSsids.get(selectedPosition);
+        return availableRouters.get(selectedPosition);
     }
 
     private boolean isManualEntrySelected(int position) {
         return wifiAdapter != null && position == wifiAdapter.getCount() - 1;
     }
 
-    private void refreshWifiNetworks() {
-        if (wifiManager == null || !wifiManager.isWifiEnabled()) {
-            showManualEntryOnly(getString(R.string.wifi_enable_required));
-            return;
-        }
-
-        if (!checkWifiPermissions()) {
-            requestWifiPermissions();
-            return;
-        }
-
-        if (!isLocationEnabled()) {
-            showManualEntryOnly(getString(R.string.wifi_enable_location_required));
-            return;
-        }
-
-        progressBar.setVisibility(View.VISIBLE);
-        statusText.setText(R.string.wifi_scanning);
-
-        boolean scanStarted;
-        try {
-            scanStarted = wifiManager.startScan();
-        } catch (SecurityException e) {
-            scanStarted = false;
-        }
-
-        if (!scanStarted) {
-            updateNetworksFromScanResults();
-            if (availableSsids.isEmpty()) {
-                statusText.setText(R.string.wifi_scan_failed);
-            }
-        }
-    }
-
-    private void updateNetworksFromScanResults() {
-        Set<String> uniqueSsids = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-
-        try {
-            List<ScanResult> scanResults = wifiManager.getScanResults();
-            for (ScanResult result : scanResults) {
-                if (result.SSID != null) {
-                    String ssid = result.SSID.trim();
-                    if (!ssid.isEmpty()) {
-                        uniqueSsids.add(ssid);
-                    }
-                }
-            }
-        } catch (SecurityException e) {
-            showManualEntryOnly(getString(R.string.wifi_scan_permissions_required));
-            return;
-        }
-
-        availableSsids.clear();
-        availableSsids.addAll(uniqueSsids);
-        updateWifiSpinner();
-
-        progressBar.setVisibility(View.GONE);
-        if (availableSsids.isEmpty()) {
-            statusText.setText(R.string.wifi_no_networks_found);
-        } else {
-            statusText.setText(getString(R.string.wifi_networks_found, availableSsids.size()));
-        }
-    }
-
     private void updateWifiSpinner() {
-        List<String> spinnerOptions = new ArrayList<>(availableSsids);
-        spinnerOptions.add(getString(R.string.manual_entry_option));
+        List<String> options = new ArrayList<>();
+        for (Router router : availableRouters) {
+            options.add(getRouterDisplayName(router));
+        }
+        options.add(getString(R.string.manual_entry_option));
 
         wifiAdapter.clear();
-        wifiAdapter.addAll(spinnerOptions);
+        wifiAdapter.addAll(options);
         wifiAdapter.notifyDataSetChanged();
 
-        if (wifiAdapter.getCount() == 0) {
-            return;
-        }
-
-        if (availableSsids.isEmpty()) {
-            wifiSpinner.setSelection(wifiAdapter.getCount() - 1);
-            manualSsidContainer.setVisibility(View.VISIBLE);
-        } else {
+        if (!availableRouters.isEmpty()) {
             wifiSpinner.setSelection(0);
             manualSsidContainer.setVisibility(View.GONE);
+            configureButton.setEnabled(true);
+        } else {
+            wifiSpinner.setSelection(wifiAdapter.getCount() - 1);
+            manualSsidContainer.setVisibility(View.VISIBLE);
+            configureButton.setEnabled(true);
         }
     }
 
-    private void showManualEntryOnly(String message) {
-        progressBar.setVisibility(View.GONE);
-        availableSsids.clear();
+    private String getRouterDisplayName(Router router) {
+        String name = router.getName();
+        if (name != null && !name.trim().isEmpty()) {
+            return name.trim();
+        }
+
+        byte[] essid = router.getEssid();
+        if (essid == null || essid.length == 0) {
+            return getString(R.string.unknown_device);
+        }
+
+        return new String(essid, StandardCharsets.UTF_8).trim();
+    }
+
+    private Router buildManualRouter(String ssid) {
+        Router router = new Router();
+        router.setName(ssid);
+        router.setEssid(ssid.getBytes(StandardCharsets.UTF_8));
+        router.setHasPwd(true);
+        return router;
+    }
+
+    private void loadNetworksFromPrinter() {
+        configureButton.setEnabled(false);
+        progressBar.setVisibility(View.VISIBLE);
+        statusText.setText(R.string.printer_wifi_scanning);
+
+        availableRouters.clear();
         updateWifiSpinner();
 
-        statusText.setText(message);
-    }
-
-    private boolean checkWifiPermissions() {
-        boolean hasLocationPermission = ContextCompat.checkSelfPermission(this,
-            Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
-
-        if (!hasLocationPermission) {
-            return false;
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return ContextCompat.checkSelfPermission(this,
-                Manifest.permission.NEARBY_WIFI_DEVICES) == PackageManager.PERMISSION_GRANTED;
-        }
-
-        return true;
-    }
-
-    private void requestWifiPermissions() {
-        List<String> permissions = new ArrayList<>();
-
-        if (ContextCompat.checkSelfPermission(this,
-            Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this,
-                Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.NEARBY_WIFI_DEVICES);
-        }
-
-        if (permissions.isEmpty()) {
-            refreshWifiNetworks();
-            return;
-        }
-
-        ActivityCompat.requestPermissions(this,
-            permissions.toArray(new String[0]), PERMISSION_REQUEST_CODE);
-    }
-
-    private boolean isLocationEnabled() {
-        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        if (locationManager == null) {
-            return false;
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return locationManager.isLocationEnabled();
-        }
-
-        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
-            || locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
-    }
-
-    private void registerWifiScanReceiver() {
-        if (wifiReceiverRegistered) {
-            return;
-        }
-
-        IntentFilter filter = new IntentFilter(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(wifiScanReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(wifiScanReceiver, filter);
-        }
-        wifiReceiverRegistered = true;
-    }
-
-    private void unregisterWifiScanReceiver() {
-        if (!wifiReceiverRegistered) {
-            return;
-        }
-
         try {
-            unregisterReceiver(wifiScanReceiver);
-        } catch (IllegalArgumentException ignored) {
+            sunmiPrinterClient.getPrinterWifiList(printerAddress);
+        } catch (Throwable t) {
+            progressBar.setVisibility(View.GONE);
+            statusText.setText(R.string.printer_wifi_scan_failed);
+            configureButton.setEnabled(true);
         }
-        wifiReceiverRegistered = false;
     }
 
-    private void configurePrinter(String ssid, String password) {
+    private void configurePrinter(Router router, String password) {
+        waitingForWifiConfigResult = true;
+        wifiConfigTimeoutHandler.removeCallbacks(wifiConfigTimeoutRunnable);
+        wifiConfigTimeoutHandler.postDelayed(wifiConfigTimeoutRunnable, WIFI_CONFIG_TIMEOUT_MS);
+
         configureButton.setEnabled(false);
         progressBar.setVisibility(View.VISIBLE);
         statusText.setText(R.string.sending_wifi_to_printer);
 
         try {
-            byte[] ssidBytes = ssid.getBytes(StandardCharsets.UTF_8);
-            sunmiPrinterClient.setPrinterWifi(printerAddress, ssidBytes, password);
+            sunmiPrinterClient.setPrinterWifi(printerAddress, router.getEssid(), password == null ? "" : password);
         } catch (Throwable t) {
             handleConfigurationFailure(getString(R.string.wifi_push_failed_try_24g));
         }
     }
 
     private void handleConfigurationSuccess() {
+        waitingForWifiConfigResult = false;
+        wifiConfigTimeoutHandler.removeCallbacks(wifiConfigTimeoutRunnable);
+
         runOnUiThread(() -> {
             progressBar.setVisibility(View.GONE);
             configureButton.setEnabled(true);
@@ -417,6 +288,9 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
     }
 
     private void handleConfigurationFailure(String message) {
+        waitingForWifiConfigResult = false;
+        wifiConfigTimeoutHandler.removeCallbacks(wifiConfigTimeoutRunnable);
+
         runOnUiThread(() -> {
             progressBar.setVisibility(View.GONE);
             configureButton.setEnabled(true);
@@ -432,17 +306,35 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
 
     @Override
     public void routerFound(Router router) {
-        // Not used in this activity.
+        runOnUiThread(() -> {
+            availableRouters.add(router);
+            updateWifiSpinner();
+        });
     }
 
     @Override
     public void onGetWifiListFinish() {
-        // Not used in this activity.
+        runOnUiThread(() -> {
+            progressBar.setVisibility(View.GONE);
+            configureButton.setEnabled(true);
+
+            if (availableRouters.isEmpty()) {
+                statusText.setText(R.string.printer_wifi_no_networks_found);
+                manualSsidContainer.setVisibility(View.VISIBLE);
+            } else {
+                statusText.setText(getString(R.string.wifi_networks_found, availableRouters.size()));
+            }
+        });
     }
 
     @Override
     public void onGetWifiListFail() {
-        // Not used in this activity.
+        runOnUiThread(() -> {
+            progressBar.setVisibility(View.GONE);
+            configureButton.setEnabled(true);
+            statusText.setText(R.string.printer_wifi_scan_failed);
+            manualSsidContainer.setVisibility(View.VISIBLE);
+        });
     }
 
     @Override
@@ -474,24 +366,5 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
     @Override
     public void onSnReceived(String sn) {
         // Not used in this activity.
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            boolean allGranted = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
-                    allGranted = false;
-                    break;
-                }
-            }
-            if (allGranted) {
-                refreshWifiNetworks();
-            } else {
-                Toast.makeText(this, R.string.wifi_scan_permissions_required, Toast.LENGTH_SHORT).show();
-            }
-        }
     }
 }
