@@ -15,4 +15,7 @@
     <string name="success">Success! Printer configured.</string>
     <string name="error">Error: %s</string>
     <string name="connected_to">Connected to: %s</string>
+    <string name="unknown_device">Unknown Device</string>
+    <string name="likely_sunmi">Likely Sunmi</string>
+    <string name="permission_required_short">Permission Required</string>
 </resources>

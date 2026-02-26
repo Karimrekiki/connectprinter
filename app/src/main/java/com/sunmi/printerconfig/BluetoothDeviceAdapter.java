@@ -47,12 +47,19 @@ public class BluetoothDeviceAdapter extends RecyclerView.Adapter<BluetoothDevice
         }
 
         if (hasPermission) {
+            String baseName = holder.itemView.getContext().getString(R.string.unknown_device);
             String name = device.getName();
+            if (name != null && !name.trim().isEmpty()) {
+                baseName = name;
+            }
+            if (PrinterDeviceClassifier.isLikelySunmi(name)) {
+                baseName = baseName + " \u2022 " + holder.itemView.getContext().getString(R.string.likely_sunmi);
+            }
             String address = device.getAddress();
-            holder.deviceName.setText(name != null ? name : "Unknown Device");
+            holder.deviceName.setText(baseName);
             holder.deviceAddress.setText(address);
         } else {
-            holder.deviceName.setText("Permission Required");
+            holder.deviceName.setText(R.string.permission_required_short);
             holder.deviceAddress.setText("");
         }
 

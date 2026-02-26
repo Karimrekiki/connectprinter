@@ -44,15 +44,9 @@ public class MainActivity extends AppCompatActivity {
             if (BluetoothDevice.ACTION_FOUND.equals(action)) {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
                 if (device != null && checkBluetoothPermission()) {
-                    String deviceName = device.getName();
-                    // Filter for Sunmi printers
-                    if (deviceName != null && (deviceName.startsWith("NT311") ||
-                        deviceName.contains("CloudPrinter") ||
-                        deviceName.contains("SUNMI"))) {
-                        if (!deviceList.contains(device)) {
-                            deviceList.add(device);
-                            deviceAdapter.notifyDataSetChanged();
-                        }
+                    if (!deviceList.contains(device)) {
+                        deviceList.add(device);
+                        deviceAdapter.notifyDataSetChanged();
                     }
                 }
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
