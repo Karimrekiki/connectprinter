@@ -90,7 +90,10 @@ public class WifiConfigActivity extends AppCompatActivity implements SunmiPrinte
         progressBar = findViewById(R.id.progressBar);
         statusText = findViewById(R.id.statusText);
 
-        sunmiPrinterClient = new SunmiPrinterClient(this, this);
+        sunmiPrinterClient = new SunmiPrinterClient(
+            new ReceiverSafeContext(getApplicationContext()),
+            this
+        );
 
         printerNameText.setText(getString(R.string.connected_to, printerName));
 

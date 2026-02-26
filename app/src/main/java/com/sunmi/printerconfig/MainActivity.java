@@ -103,7 +103,10 @@ public class MainActivity extends AppCompatActivity implements SunmiPrinterClien
             return;
         }
 
-        sunmiPrinterClient = new SunmiPrinterClient(this, this);
+        sunmiPrinterClient = new SunmiPrinterClient(
+            new ReceiverSafeContext(getApplicationContext()),
+            this
+        );
 
         scanButton.setOnClickListener(v -> {
             if (checkPermissions()) {
